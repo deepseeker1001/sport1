@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>長者健身大富翁</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontSize: {
+            dice: ["clamp(5rem,18vw,12rem)", { lineHeight: "1" }],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    :root {
+      --ink: #0f172a;
+      --cream: #fffbeb;
+      --orange: #fb923c;
+      --green: #4ade80;
+      --blue: #38bdf8;
+      --core: #fef3c7;
+      --rest: #dcfce7;
+      --chance: #e0f2fe;
+      --fun: #fce7f3;
+    }
+    body {
+      font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+      background: var(--cream);
+      color: var(--ink);
+    }
+    .board-shell {
+      position: relative;
+      width: 100%;
+      max-width: 72rem;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .board-grid {
+      display: grid;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+      grid-template-rows: repeat(6, minmax(3.75rem, 1fr));
+      gap: 0.35rem;
+      width: 100%;
+    }
+    @media (min-width: 1024px) {
+      .board-grid { min-height: 22rem; }
+    }
+    /**
+     * 中央空洞 = 第 2～7 欄、第 2～5 列（與 BOARD_LAYOUT 中空對齊）
+     * 以比例推算約略位置（含 gap 誤差可接受）
+     */
+    .dice-center-panel #diceFace {
+      font-size: clamp(2.5rem, min(16vw, 18vh), 6.75rem);
+      line-height: 1;
+    }
+    .dice-center-panel {
+      position: absolute;
+      z-index: 25;
+      left: calc(12.5% + 0.18rem);
+      right: calc(12.5% + 0.18rem);
+      top: calc(16.67% + 0.18rem);
+      bottom: calc(16.67% + 0.18rem);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 0.5rem 0.35rem;
+      border-radius: 1rem;
+      background: linear-gradient(180deg, #fffbeb 0%, #ffedd5 100%);
+      border: 4px solid #0f172a;
+      box-shadow: 6px 6px 0 #0f172a, inset 0 0 0 3px rgba(251, 146, 60, 0.35);
+      pointer-events: none;
+    }
+    .cell {
+      border: 3px solid #0f172a;
+      border-radius: 0.5rem;
+      font-weight: 800;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 0.2rem;
+      position: relative;
+      min-height: 3.5rem;
+      transition: box-shadow 0.15s ease, transform 0.1s ease;
+    }
+    .cell:active { transform: scale(0.98); }
+    .cell-core { background: var(--core); }
+    .cell-rest { background: var(--rest); }
+    .cell-chance { background: var(--chance); }
+    .cell-fun { background: var(--fun); }
+    .cell-active {
+      box-shadow: 0 0 0 5px #2563eb, 0 0 0 9px #fff;
+      z-index: 2;
+    }
+    .game-pawn {
+      width: clamp(1.5rem, 5vw, 2.25rem);
+      height: clamp(1.5rem, 5vw, 2.25rem);
+      flex-shrink: 0;
+      filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.35));
+    }
+    .token-row {
+      position: absolute;
+      left: 0.15rem;
+      right: 0.15rem;
+      bottom: 0.1rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.15rem;
+      justify-content: center;
+      align-items: flex-end;
+      pointer-events: none;
+      max-height: 55%;
+    }
+    .card-illustration {
+      border: 4px solid #0f172a;
+      border-radius: 1rem;
+      background: linear-gradient(180deg, #eff6ff 0%, #fff 55%);
+      overflow: hidden;
+    }
+    .card-illustration svg {
+      display: block;
+      width: 100%;
+      height: auto;
+      max-height: min(42vh, 280px);
+    }
+    @keyframes modal-in {
+      from {
+        transform: scale(0.94) translateY(12px);
+        opacity: 0;
+      }
+      to {
+        transform: scale(1) translateY(0);
+        opacity: 1;
+      }
+    }
+    .modal-panel-animate {
+      animation: modal-in 0.38s cubic-bezier(0.34, 1.2, 0.64, 1) both;
+    }
+    @keyframes dice-pop {
+      0% { transform: scale(0.2) rotate(-18deg); opacity: 0; }
+      55% { transform: scale(1.12) rotate(6deg); opacity: 1; }
+      75% { transform: scale(0.95) rotate(-3deg); }
+      100% { transform: scale(1) rotate(0deg); }
+    }
+    @keyframes dice-glow {
+      0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+      50% { filter: drop-shadow(0 0 22px rgba(251, 146, 60, 0.95)); }
+    }
+    .dice-animate {
+      animation: dice-pop 0.65s cubic-bezier(0.34, 1.56, 0.64, 1) both, dice-glow 1.1s ease-in-out 2;
+    }
+    .panel-card {
+      border: 4px solid #0f172a;
+      box-shadow: 8px 8px 0 #0f172a;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+  <!-- 頂部 -->
+  <header class="shrink-0 border-b-4 border-slate-900 bg-gradient-to-r from-amber-200 via-orange-200 to-amber-100 px-3 py-4 lg:px-8">
+    <div class="max-w-[100rem] mx-auto flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+      <div>
+        <h1 class="text-4xl sm:text-5xl xl:text-6xl font-black tracking-tight text-slate-900 leading-tight">
+          長者健身大富翁
+        </h1>
+        <p class="mt-1 text-2xl sm:text-3xl font-bold text-slate-800">
+          邊走棋邊運動 · 慢慢做 · 量力而為
+        </p>
+      </div>
+      <div class="flex flex-wrap gap-3 lg:gap-4 items-stretch">
+        <div class="panel-card bg-white rounded-2xl px-4 py-3 min-w-[10rem]">
+          <p class="text-xl font-black text-slate-600">難度</p>
+          <p id="levelDisplay" class="text-5xl sm:text-6xl font-black text-orange-600 leading-none mt-1">L1</p>
+          <p class="text-lg font-bold text-slate-600 mt-1">完成一圈後自動 L2</p>
+        </div>
+        <div class="panel-card bg-white rounded-2xl px-4 py-3 min-w-[10rem]">
+          <p class="text-xl font-black text-slate-600">本組完成圈數</p>
+          <p id="lapDisplay" class="text-5xl sm:text-6xl font-black text-emerald-600 leading-none mt-1">0</p>
+        </div>
+        <div class="panel-card bg-white rounded-2xl px-4 py-3 flex-1 min-w-[12rem]">
+          <p class="text-xl font-black text-slate-600">現在輪到</p>
+          <p id="groupDisplay" class="text-4xl sm:text-5xl font-black text-slate-900 leading-tight mt-1 flex items-center gap-2">
+            <span id="groupSwatch" class="inline-block w-10 h-10 rounded-full border-4 border-slate-900 shrink-0"></span>
+            <span id="groupName">紅組</span>
+          </p>
+          <p id="posLine" class="text-2xl font-bold text-slate-700 mt-2">位置：第 1 格</p>
+        </div>
+        <div class="panel-card bg-white rounded-2xl px-4 py-3 min-w-[10rem]">
+          <p class="text-xl font-black text-slate-600">本組積分</p>
+          <p id="scoreDisplay" class="text-5xl sm:text-6xl font-black text-sky-600 leading-none mt-1">0</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主區：骰子 + 地圖 + 動作卡 -->
+  <main class="flex-1 px-2 py-4 lg:px-6">
+    <div class="max-w-[100rem] mx-auto flex flex-col xl:flex-row gap-4 xl:gap-6">
+      <!-- 左欄：棋盤（骰子顯示在棋盤正中央空洞） -->
+      <div class="flex-1 flex flex-col gap-4 min-w-0">
+        <section>
+          <h2 class="text-3xl sm:text-4xl font-black text-center text-slate-900 mb-3">24 格棋盤（依序繞一圈）</h2>
+          <p class="text-center text-xl sm:text-2xl font-bold text-slate-700 mb-2">
+            中央為骰子點數 · ★ 核心肌力格 · 橘底休息 · 藍底機會
+          </p>
+          <div class="board-shell" aria-label="棋盤與骰子">
+            <div id="board" class="board-grid" aria-label="健身大富翁棋盤"></div>
+            <div class="dice-center-panel" aria-live="polite">
+              <p class="text-xl sm:text-2xl lg:text-3xl font-black text-slate-800 mb-1 leading-tight">骰子點數</p>
+              <p class="text-sm sm:text-lg font-bold text-slate-600 mb-2 leading-tight px-1">
+                擲骰後先看中央數字，再帶領做動作
+              </p>
+              <div id="diceFace" class="dice-animate font-black text-slate-900 select-none leading-none my-1" role="img" aria-label="骰子點數">
+                —
+              </div>
+              <p id="diceHint" class="mt-1 text-base sm:text-xl lg:text-2xl font-bold text-slate-800 max-w-full px-1 leading-snug">
+                請用下方「電腦擲骰」或輸入 1–6
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- 右欄：動作說明卡（與彈窗同步） -->
+      <aside class="w-full xl:w-[min(28rem,100%)] shrink-0">
+        <div class="panel-card bg-white rounded-3xl p-5 sm:p-6 sticky top-4">
+          <h2 class="text-3xl sm:text-4xl font-black text-slate-900 border-b-4 border-slate-900 pb-3 mb-4">動作說明卡</h2>
+          <div id="cardTitle" class="text-4xl sm:text-5xl font-black text-orange-700 leading-tight mb-4">請先擲骰或選格</div>
+          <div id="cardBody" class="space-y-5 text-3xl sm:text-4xl font-bold text-slate-900 leading-relaxed"></div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <!-- 擲骰落地後：動作說明彈窗 -->
+  <div
+    id="actionModal"
+    class="fixed inset-0 z-[100] hidden flex items-center justify-center p-3 sm:p-6"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="modalCardTitle"
+  >
+    <button
+      type="button"
+      id="actionModalBackdrop"
+      class="absolute inset-0 bg-black/75 border-0 cursor-default"
+      aria-label="關閉動作說明"
+    ></button>
+    <div
+      id="actionModalPanel"
+      class="relative z-10 w-full max-w-4xl max-h-[92vh] overflow-y-auto rounded-3xl border-4 border-slate-900 bg-amber-50 shadow-[12px_12px_0_#0f172a]"
+    >
+      <div class="sticky top-0 z-20 flex items-start justify-between gap-3 border-b-4 border-slate-900 bg-gradient-to-r from-amber-200 to-orange-100 px-4 py-4 sm:px-6">
+        <h2 id="modalCardTitle" class="text-4xl sm:text-5xl font-black text-slate-900 leading-tight pr-2">動作說明</h2>
+        <button
+          type="button"
+          id="actionModalClose"
+          class="shrink-0 min-w-[3.5rem] min-h-[3.5rem] rounded-2xl border-4 border-slate-900 bg-white text-4xl font-black leading-none text-slate-900 shadow-[4px_4px_0_#0f172a] active:translate-x-0.5 active:translate-y-0.5"
+          aria-label="關閉"
+        >
+          ×
+        </button>
+      </div>
+      <div id="modalCardBody" class="px-4 py-5 sm:px-8 sm:py-8 space-y-5 text-3xl sm:text-4xl font-bold text-slate-900 leading-relaxed"></div>
+    </div>
+  </div>
+
+  <!-- 底部控制 -->
+  <footer class="shrink-0 border-t-4 border-slate-900 bg-slate-900 text-white px-3 py-5 lg:px-8">
+    <div class="max-w-[100rem] mx-auto space-y-4">
+      <p id="statusMsg" class="text-center text-2xl sm:text-3xl lg:text-4xl font-black text-amber-200 leading-snug">
+        可搭配實體骰子：由工作人員輸入點數，或按電腦擲骰。
+      </p>
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-3 xl:gap-4 items-stretch">
+        <button
+          type="button"
+          id="btnRoll"
+          class="xl:col-span-3 min-h-[5.5rem] rounded-2xl border-4 border-white bg-orange-400 text-slate-900 text-3xl sm:text-4xl font-black shadow-[6px_6px_0_#fff] active:translate-x-1 active:translate-y-1"
+        >
+          電腦擲骰
+        </button>
+        <div class="xl:col-span-4 flex flex-col sm:flex-row gap-3 items-stretch">
+          <label class="flex-1 flex flex-col gap-2 bg-slate-800 rounded-2xl border-4 border-white px-4 py-3">
+            <span class="text-2xl font-black text-amber-200">實體骰子點數（1–6）</span>
+            <input
+              id="diceInput"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              max="6"
+              placeholder="輸入 1–6"
+              class="text-4xl sm:text-5xl font-black text-slate-900 bg-white border-4 border-slate-900 rounded-xl px-3 py-2 w-full"
+            />
+          </label>
+          <button
+            type="button"
+            id="btnApplyDice"
+            class="sm:w-48 min-h-[5.5rem] rounded-2xl border-4 border-white bg-sky-400 text-slate-900 text-2xl sm:text-3xl font-black shadow-[6px_6px_0_#fff] active:translate-x-1 active:translate-y-1"
+          >
+            套用點數<br />前進
+          </button>
+        </div>
+        <button
+          type="button"
+          id="btnDone"
+          class="xl:col-span-2 min-h-[5.5rem] rounded-2xl border-4 border-white bg-lime-400 text-slate-900 text-3xl sm:text-4xl font-black shadow-[6px_6px_0_#fff] active:translate-x-1 active:translate-y-1"
+        >
+          完成動作
+        </button>
+        <button
+          type="button"
+          id="btnNext"
+          class="xl:col-span-3 min-h-[5.5rem] rounded-2xl border-4 border-white bg-emerald-400 text-slate-900 text-3xl sm:text-4xl font-black shadow-[6px_6px_0_#fff] active:translate-x-1 active:translate-y-1"
+        >
+          下一組
+        </button>
+      </div>
+      <div class="flex flex-wrap justify-center gap-3">
+        <label class="text-2xl font-black flex items-center gap-2">
+          <span>組數</span>
+          <select id="groupCount" class="text-3xl font-black text-slate-900 bg-white border-4 border-white rounded-xl px-2 py-2">
+            <option value="3">3 組</option>
+            <option value="4" selected>4 組</option>
+            <option value="5">5 組</option>
+            <option value="6">6 組</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      var SAFETY = "動作要慢，感覺肌肉用力但不要痛。頭暈、喘不過氣、胸口悶請立刻停止並告知工作人員。";
+
+      /** 格號 1–24（已與您確認） */
+      var CELLS = {
+        1: { kind: "rest", name: "深呼吸放鬆", desc: "深吸慢吐 3～5 次，肩頸放鬆。", area: "呼吸、放鬆", l1: "舒適節奏即可", l2: "舒適節奏即可" },
+        2: { kind: "core", coreId: 1 },
+        3: { kind: "rest", name: "喝水休息", desc: "小口補水，坐穩休息。", area: "水分補充", l1: "休息為主", l2: "休息為主" },
+        4: { kind: "chance", name: "機會卡：再擲一次", desc: "本回合可再擲一次骰子前進（工作人員協助）。", area: "機會", l1: "再擲 1 次", l2: "再擲 1 次" },
+        5: { kind: "core", coreId: 2 },
+        6: { kind: "active", name: "原地踏步", desc: "扶穩桌椅，原地輕踏步。", area: "下肢循環、暖身", l1: "約 20 秒", l2: "約 30 秒" },
+        7: { kind: "rest", name: "全身伸展", desc: "肩、背、腿輕柔伸展，不憋氣。", area: "柔軟度、放鬆", l1: "依引導，舒適為主", l2: "依引導，舒適為主" },
+        8: { kind: "core", coreId: 3 },
+        9: { kind: "fun", name: "拍手鼓勵", desc: "全組一起鼓掌，為自己與他組加油！", area: "士氣、趣味", l1: "全組 +1 積分", l2: "全組 +1 積分", score: 1 },
+        10: { kind: "rest", name: "喝水休息", desc: "小口補水。", area: "休息", l1: "休息為主", l2: "休息為主" },
+        11: { kind: "core", coreId: 4 },
+        12: { kind: "rest", name: "深呼吸三次", desc: "專注呼吸，肩膀放鬆下沉。", area: "放鬆", l1: "深吸吐 ×3", l2: "深吸吐 ×3" },
+        13: { kind: "active", name: "坐姿輕抬膝", desc: "暖身用，輪流輕抬膝，幅度小、速度慢。", area: "髖、大腿", l1: "左右各 6～8 次", l2: "左右各 8～10 次" },
+        14: { kind: "core", coreId: 5 },
+        15: { kind: "chance", name: "機會卡：互相加油", desc: "與鄰組揮手或說一句加油（可坐著完成）。", area: "社交、氣氛", l1: "1 句話即可", l2: "1 句話即可" },
+        16: { kind: "rest", name: "喝水休息", desc: "休息補水。", area: "休息", l1: "休息為主", l2: "休息為主" },
+        17: { kind: "core", coreId: 6 },
+        18: { kind: "active", name: "原地慢步", desc: "扶穩，小碎步慢走，呼吸自然。", area: "下肢、循環", l1: "約 20 秒", l2: "約 30 秒" },
+        19: { kind: "chance", name: "機會卡：幸運休息", desc: "本格改為坐好調息，不做額外肌力。", area: "恢復", l1: "靜坐調息約 30 秒", l2: "靜坐調息約 30 秒" },
+        20: { kind: "core", coreId: 7 },
+        21: { kind: "rest", name: "肩背鬆一鬆", desc: "聳肩—放下；肩胛輕輕往後。", area: "肩、上背", l1: "6～8 次", l2: "8～10 次" },
+        22: { kind: "rest", name: "坐下調息", desc: "靜坐，準備最後核心格。", area: "恢復", l1: "約 30 秒", l2: "約 30 秒" },
+        23: { kind: "core", coreId: 8 },
+        24: { kind: "rest", name: "一圈完成慶祝", desc: "全組拍手一下，感謝身體的努力！", area: "里程碑", l1: "慶祝後繼續前進", l2: "慶祝後繼續前進" },
+      };
+
+      var CORE = {
+        1: {
+          name: "椅子坐立",
+          desc: "從坐姿慢慢站起再坐回。",
+          area: "腿部、臀部；提升起立能力",
+          l1: "5～6 次",
+          l2: "8～10 次",
+        },
+        2: {
+          name: "坐姿單腳伸直",
+          desc: "坐姿單腳向前伸直抬高。",
+          area: "大腿前側",
+          l1: "左右各 6～8 次",
+          l2: "左右各 10～12 次",
+        },
+        3: {
+          name: "坐姿腳跟勾起",
+          desc: "坐姿腳跟向後勾。",
+          area: "大腿後側",
+          l1: "左右各 6～8 次",
+          l2: "左右各 10～12 次",
+        },
+        4: {
+          name: "坐姿側抬腿",
+          desc: "坐姿單腳向側邊抬起。",
+          area: "髖部外側",
+          l1: "左右各 6 次",
+          l2: "左右各 10 次",
+        },
+        5: {
+          name: "坐姿踮腳",
+          desc: "坐姿踮起腳跟。",
+          area: "小腿",
+          l1: "10 次",
+          l2: "15 次",
+        },
+        6: {
+          name: "坐姿手臂彎舉",
+          desc: "坐姿雙手彎舉。",
+          area: "手臂",
+          l1: "左右各 8 次",
+          l2: "左右各 12 次",
+        },
+        7: {
+          name: "坐姿肩部推舉",
+          desc: "坐姿向上推手。",
+          area: "肩膀",
+          l1: "左右各 6～8 次",
+          l2: "左右各 10 次",
+        },
+        8: {
+          name: "坐姿核心收緊",
+          desc: "坐姿用力收緊腹部。",
+          area: "核心穩定",
+          l1: "每次收緊維持 8 秒 × 5 回",
+          l2: "每次收緊維持 12 秒 × 6 回",
+        },
+      };
+
+      /** 動作示意（SVG）：8 核心 + 各情境格 */
+      var CORE_SVG = {
+        1:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><rect x="36" y="128" width="248" height="14" fill="#cbd5e1" stroke="#0f172a" stroke-width="3" rx="4"/><rect x="118" y="82" width="84" height="46" fill="#fde68a" stroke="#0f172a" stroke-width="3" rx="4"/><circle cx="160" cy="64" r="22" fill="#fdba74" stroke="#0f172a" stroke-width="3"/><path d="M160 86 L160 128 M138 102 L182 102" stroke="#0f172a" stroke-width="5" stroke-linecap="round"/><path d="M124 128 L124 72 Q124 48 160 48 Q196 48 196 72 L196 128" fill="none" stroke="#2563eb" stroke-width="4" stroke-dasharray="8 6"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">慢慢站起 · 再坐下</text></svg>',
+        2:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><rect x="36" y="128" width="248" height="14" fill="#cbd5e1" stroke="#0f172a" stroke-width="3" rx="4"/><rect x="118" y="88" width="84" height="40" fill="#fde68a" stroke="#0f172a" stroke-width="3" rx="4"/><circle cx="160" cy="72" r="20" fill="#fdba74" stroke="#0f172a" stroke-width="3"/><path d="M160 92 L160 128 M140 108 L180 108" stroke="#0f172a" stroke-width="5" stroke-linecap="round"/><path d="M196 128 L230 128 L248 98" fill="none" stroke="#ea580c" stroke-width="6" stroke-linecap="round"/><circle cx="252" cy="94" r="10" fill="#fdba74" stroke="#0f172a" stroke-width="3"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">單腳伸直抬高</text></svg>',
+        3:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><rect x="36" y="128" width="248" height="14" fill="#cbd5e1" stroke="#0f172a" stroke-width="3" rx="4"/><rect x="118" y="88" width="84" height="40" fill="#fde68a" stroke="#0f172a" stroke-width="3" rx="4"/><circle cx="160" cy="72" r="20" fill="#fdba74" stroke="#0f172a" stroke-width="3"/><path d="M188 128 L230 128 L248 118" fill="none" stroke="#ea580c" stroke-width="6" stroke-linecap="round"/><path d="M248 118 L252 108 L248 100" fill="none" stroke="#2563eb" stroke-width="5"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">腳跟向後勾</text></svg>',
+        4:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><rect x="36" y="128" width="248" height="14" fill="#cbd5e1" stroke="#0f172a" stroke-width="3" rx="4"/><rect x="118" y="88" width="84" height="40" fill="#fde68a" stroke="#0f172a" stroke-width="3" rx="4"/><circle cx="160" cy="72" r="20" fill="#fdba74" stroke="#0f172a" stroke-width="3"/><path d="M188 124 L228 96 L248 88" fill="none" stroke="#ea580c" stroke-width="6" stroke-linecap="round"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">向側邊抬腿</text></svg>',
+        5:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><rect x="36" y="128" width="248" height="14" fill="#cbd5e1" stroke="#0f172a" stroke-width="3" rx="4"/><rect x="118" y="88" width="84" height="40" fill="#fde68a" stroke="#0f172a" stroke-width="3" rx="4"/><circle cx="160" cy="72" r="20" fill="#fdba74" stroke="#0f172a" stroke-width="3"/><ellipse cx="175" cy="132" rx="28" ry="10" fill="#fde68a" stroke="#0f172a" stroke-width="3"/><path d="M148 132 L202 132 M160 122 L160 138" stroke="#ea580c" stroke-width="4"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">腳跟踮起</text></svg>',
+        6:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><rect x="36" y="128" width="248" height="14" fill="#cbd5e1" stroke="#0f172a" stroke-width="3" rx="4"/><rect x="118" y="88" width="84" height="40" fill="#fde68a" stroke="#0f172a" stroke-width="3" rx="4"/><circle cx="160" cy="72" r="20" fill="#fdba74" stroke="#0f172a" stroke-width="3"/><path d="M130 104 Q118 96 108 108 Q118 118 130 108" fill="none" stroke="#ea580c" stroke-width="6" stroke-linecap="round"/><path d="M190 104 Q202 96 212 108 Q202 118 190 108" fill="none" stroke="#ea580c" stroke-width="6" stroke-linecap="round"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">手臂彎舉</text></svg>',
+        7:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><rect x="36" y="128" width="248" height="14" fill="#cbd5e1" stroke="#0f172a" stroke-width="3" rx="4"/><rect x="118" y="88" width="84" height="40" fill="#fde68a" stroke="#0f172a" stroke-width="3" rx="4"/><circle cx="160" cy="72" r="20" fill="#fdba74" stroke="#0f172a" stroke-width="3"/><path d="M130 100 L130 56 M190 100 L190 56" fill="none" stroke="#ea580c" stroke-width="6" stroke-linecap="round"/><circle cx="130" cy="48" r="10" fill="#fde68a" stroke="#0f172a" stroke-width="3"/><circle cx="190" cy="48" r="10" fill="#fde68a" stroke="#0f172a" stroke-width="3"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">向上推手</text></svg>',
+        8:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><rect x="36" y="128" width="248" height="14" fill="#cbd5e1" stroke="#0f172a" stroke-width="3" rx="4"/><rect x="118" y="88" width="84" height="40" fill="#fde68a" stroke="#0f172a" stroke-width="3" rx="4"/><circle cx="160" cy="72" r="20" fill="#fdba74" stroke="#0f172a" stroke-width="3"/><ellipse cx="160" cy="112" rx="34" ry="22" fill="none" stroke="#2563eb" stroke-width="5" stroke-dasharray="6 5"/><path d="M140 112 L160 102 L180 112" fill="none" stroke="#2563eb" stroke-width="4"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">腹部輕輕收緊</text></svg>',
+      };
+
+      var EXTRA_SVG = {
+        1:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><path d="M80 120 Q160 60 240 120" fill="none" stroke="#38bdf8" stroke-width="6" stroke-linecap="round"/><path d="M240 120 Q160 170 80 120" fill="none" stroke="#22c55e" stroke-width="6" stroke-linecap="round"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">深呼吸 · 放鬆肩頸</text></svg>',
+        3:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><rect x="130" y="70" width="60" height="90" rx="8" fill="#bae6fd" stroke="#0f172a" stroke-width="4"/><rect x="138" y="78" width="44" height="55" fill="#38bdf8"/><path d="M148 140 L172 140 L172 155 L148 155 Z" fill="#94a3b8"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">小口補水休息</text></svg>',
+        4:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><rect x="96" y="56" width="128" height="128" rx="18" fill="#fff" stroke="#0f172a" stroke-width="5"/><circle cx="136" cy="96" r="12" fill="#0f172a"/><circle cx="184" cy="96" r="12" fill="#0f172a"/><circle cx="136" cy="136" r="12" fill="#0f172a"/><circle cx="184" cy="136" r="12" fill="#0f172a"/><path d="M104 168 L216 168" stroke="#f97316" stroke-width="6"/><text x="160" y="38" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">機會：再擲一次</text></svg>',
+        6:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><ellipse cx="120" cy="150" rx="22" ry="10" fill="#cbd5e1"/><ellipse cx="200" cy="142" rx="22" ry="10" fill="#cbd5e1"/><ellipse cx="160" cy="134" rx="22" ry="10" fill="#cbd5e1"/><path d="M120 118 L120 150 M200 110 L200 142 M160 102 L160 134" stroke="#ea580c" stroke-width="8" stroke-linecap="round"/><circle cx="160" cy="88" r="22" fill="#fdba74" stroke="#0f172a" stroke-width="3"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">原地踏步</text></svg>',
+        7:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><path d="M160 40 L160 150 M120 80 L200 80 M130 120 L190 120" stroke="#22c55e" stroke-width="6" stroke-linecap="round"/><circle cx="160" cy="36" r="14" fill="#fdba74" stroke="#0f172a" stroke-width="3"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">全身伸展</text></svg>',
+        9:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><circle cx="110" cy="110" r="28" fill="#fde68a" stroke="#0f172a" stroke-width="4"/><circle cx="210" cy="110" r="28" fill="#fde68a" stroke="#0f172a" stroke-width="4"/><path d="M138 110 L182 110" stroke="#0f172a" stroke-width="6"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">拍手鼓勵</text></svg>',
+        10:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><rect x="130" y="70" width="60" height="90" rx="8" fill="#bae6fd" stroke="#0f172a" stroke-width="4"/><rect x="138" y="78" width="44" height="55" fill="#38bdf8"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">喝水休息</text></svg>',
+        12:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><circle cx="160" cy="90" r="40" fill="none" stroke="#38bdf8" stroke-width="6"/><text x="160" y="98" text-anchor="middle" font-size="28" font-weight="bold" fill="#0f172a">3</text><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">深呼吸三次</text></svg>',
+        13:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><rect x="70" y="120" width="180" height="14" fill="#cbd5e1" stroke="#0f172a" stroke-width="3" rx="4"/><path d="M140 120 L140 95 L175 78 L190 95 L190 120" fill="#fde68a" stroke="#0f172a" stroke-width="3"/><circle cx="175" cy="68" r="16" fill="#fdba74" stroke="#0f172a" stroke-width="3"/><path d="M200 120 L230 95" stroke="#ea580c" stroke-width="6" stroke-linecap="round"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">輕抬膝</text></svg>',
+        15:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><path d="M80 130 L120 90 L160 110 L200 90 L240 130" fill="none" stroke="#f97316" stroke-width="7" stroke-linecap="round"/><circle cx="120" cy="88" r="18" fill="#fdba74" stroke="#0f172a" stroke-width="3"/><circle cx="200" cy="88" r="18" fill="#fdba74" stroke="#0f172a" stroke-width="3"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">互相加油</text></svg>',
+        16:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><rect x="130" y="70" width="60" height="90" rx="8" fill="#bae6fd" stroke="#0f172a" stroke-width="4"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">喝水休息</text></svg>',
+        18:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><ellipse cx="110" cy="148" rx="20" ry="8" fill="#cbd5e1"/><ellipse cx="210" cy="152" rx="20" ry="8" fill="#cbd5e1"/><circle cx="160" cy="96" r="22" fill="#fdba74" stroke="#0f172a" stroke-width="3"/><path d="M140 118 L130 148 M180 118 L190 152" stroke="#ea580c" stroke-width="7" stroke-linecap="round"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">原地慢步</text></svg>',
+        19:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><rect x="118" y="88" width="84" height="46" fill="#fde68a" stroke="#0f172a" stroke-width="3" rx="4"/><circle cx="160" cy="72" r="20" fill="#fdba74" stroke="#0f172a" stroke-width="3"/><path d="M140 72 Q160 52 180 72" fill="none" stroke="#22c55e" stroke-width="4"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">幸運休息 · 調息</text></svg>',
+        21:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><circle cx="160" cy="88" r="22" fill="#fdba74" stroke="#0f172a" stroke-width="3"/><path d="M140 110 L120 130 M180 110 L200 130" stroke="#ea580c" stroke-width="6" stroke-linecap="round"/><path d="M120 72 Q160 52 200 72" fill="none" stroke="#2563eb" stroke-width="5"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">肩背鬆一鬆</text></svg>',
+        22:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><circle cx="160" cy="78" r="22" fill="#fdba74" stroke="#0f172a" stroke-width="3"/><path d="M140 100 Q160 118 180 100 L180 140 L140 140 Z" fill="#fde68a" stroke="#0f172a" stroke-width="3"/><path d="M160 118 L160 108" stroke="#38bdf8" stroke-width="4"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">坐下調息</text></svg>',
+        24:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><path d="M120 140 L140 80 L160 100 L180 80 L200 140 Z" fill="#fde68a" stroke="#0f172a" stroke-width="4"/><circle cx="160" cy="72" r="18" fill="#fdba74" stroke="#0f172a" stroke-width="3"/><circle cx="160" cy="108" r="8" fill="#f97316"/><text x="160" y="188" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">一圈完成 · 恭喜</text></svg>',
+      };
+
+      function getIllustrationHtml(cellNum) {
+        var c = CELLS[cellNum];
+        if (c.kind === "core") return CORE_SVG[c.coreId];
+        if (EXTRA_SVG[cellNum]) return EXTRA_SVG[cellNum];
+        return (
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" aria-hidden="true"><rect x="60" y="60" width="200" height="80" rx="12" fill="#e2e8f0" stroke="#0f172a" stroke-width="4"/><text x="160" y="112" text-anchor="middle" font-size="18" font-weight="bold" fill="#0f172a">跟著口令 · 量力而為</text></svg>'
+        );
+      }
+
+      function pawnSvg(color, title) {
+        var t = title.replace(/"/g, "&quot;");
+        return (
+          '<span class="inline-flex flex-col items-center" title="' +
+          t +
+          '">' +
+          '<svg class="game-pawn" viewBox="0 0 32 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+          '<ellipse cx="16" cy="34" rx="11" ry="4.5" fill="#000" opacity="0.18"/>' +
+          '<path d="M16 8 C11 8 8 11 8 16 C8 19 9 21 10 23 L10 30 L22 30 L22 23 C23 21 24 19 24 16 C24 11 21 8 16 8 Z" fill="' +
+          color +
+          '" stroke="#0f172a" stroke-width="1.8" stroke-linejoin="round"/>' +
+          '<circle cx="16" cy="14" r="7.5" fill="' +
+          color +
+          '" stroke="#0f172a" stroke-width="1.8"/>' +
+          '<ellipse cx="16" cy="26" rx="9" ry="5" fill="#ffffff" opacity="0.35"/>' +
+          "</svg>" +
+          "</span>"
+        );
+      }
+
+      function buildCardBodyHtml(cell, g) {
+        var info = resolveCell(cell);
+        var dose = doseForGroup(g, info);
+        var ill = getIllustrationHtml(cell);
+        var parts = [];
+        parts.push('<div class="card-illustration">' + ill + "</div>");
+        parts.push('<p><span class="text-sky-700">類型：</span>' + info.badge + "</p>");
+        parts.push('<p><span class="text-sky-700">說明：</span>' + info.desc + "</p>");
+        parts.push('<p><span class="text-sky-700">主要訓練／重點：</span>' + info.area + "</p>");
+        parts.push(
+          '<p><span class="text-sky-700">目前難度（' +
+            levelLabel(g) +
+            "）：</span><span class=\"font-black text-orange-700\">" +
+            dose +
+            "</span></p>"
+        );
+        parts.push(
+          '<div class="mt-4 border-l-8 border-amber-500 bg-amber-50 px-4 py-4 text-3xl sm:text-4xl font-black text-slate-900 leading-snug">安全提醒：' +
+            SAFETY +
+            "</div>"
+        );
+        return parts.join("");
+      }
+
+      var BOARD_LAYOUT = [
+        [1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1],
+      ];
+
+      var CELL_NUMBER_AT = (function () {
+        var top = [1, 2, 3, 4, 5, 6, 7, 8];
+        var right = [9, 10, 11, 12];
+        var bottom = [13, 14, 15, 16, 17, 18, 19, 20];
+        var left = [21, 22, 23, 24];
+        var map = {};
+        var i;
+        for (i = 0; i < top.length; i++) map[top[i]] = { c: i, r: 0 };
+        for (i = 0; i < right.length; i++) map[right[i]] = { c: 7, r: 1 + i };
+        for (i = 0; i < bottom.length; i++) map[bottom[i]] = { c: 7 - i, r: 5 };
+        for (i = 0; i < left.length; i++) map[left[i]] = { c: 0, r: 4 - i };
+        return map;
+      })();
+
+      var GROUPS_META = [
+        { name: "紅組", color: "#ef4444" },
+        { name: "藍組", color: "#3b82f6" },
+        { name: "綠組", color: "#22c55e" },
+        { name: "黃組", color: "#eab308" },
+        { name: "紫組", color: "#a855f7" },
+        { name: "橘組", color: "#f97316" },
+      ];
+
+      function el(id) {
+        return document.getElementById(id);
+      }
+
+      var state = {
+        groupCount: 4,
+        currentIdx: 0,
+        groups: [],
+        lastDice: null,
+        phase: "idle",
+        /** 落在第 4 格後，須再擲一次骰子才能結束此組回合 */
+        mustReroll: false,
+        /** 避免同一組在未按「下一組」前連續擲骰；落在再擲格時會暫時開放 */
+        canRoll: true,
+      };
+
+      function effectiveLevel(g) {
+        return g.laps >= 1 ? 2 : 1;
+      }
+
+      function levelLabel(g) {
+        return effectiveLevel(g) === 2 ? "L2" : "L1";
+      }
+
+      function resolveCell(cell) {
+        var c = CELLS[cell];
+        if (c.kind === "core") {
+          var k = CORE[c.coreId];
+          return {
+            title: k.name,
+            desc: k.desc,
+            area: k.area,
+            l1: k.l1,
+            l2: k.l2,
+            badge: "核心肌力",
+          };
+        }
+        return {
+          title: c.name,
+          desc: c.desc,
+          area: c.area,
+          l1: c.l1,
+          l2: c.l2,
+          badge: c.kind === "chance" ? "機會" : c.kind === "fun" ? "趣味" : c.kind === "active" ? "活動" : "休息",
+        };
+      }
+
+      function doseForGroup(g, info) {
+        return effectiveLevel(g) === 2 ? info.l2 : info.l1;
+      }
+
+      function cellUiClass(c) {
+        if (c.kind === "core") return "cell-core";
+        if (c.kind === "chance") return "cell-chance";
+        if (c.kind === "fun") return "cell-fun";
+        if (c.kind === "active") return "bg-amber-100";
+        return "cell-rest";
+      }
+
+      function shortName(cell) {
+        var c = CELLS[cell];
+        if (c.kind === "core") return CORE[c.coreId].name;
+        return c.name.length > 6 ? c.name.slice(0, 6) + "…" : c.name;
+      }
+
+      function buildGroups() {
+        var n = parseInt(el("groupCount").value, 10) || 4;
+        state.groupCount = n;
+        state.groups = [];
+        var i;
+        for (i = 0; i < n; i++) {
+          state.groups.push({
+            name: GROUPS_META[i].name,
+            color: GROUPS_META[i].color,
+            position: 1,
+            score: 0,
+            laps: 0,
+          });
+        }
+        if (state.currentIdx >= n) state.currentIdx = 0;
+        state.phase = "idle";
+        state.mustReroll = false;
+        state.canRoll = true;
+        state.lastDice = null;
+        closeActionModal();
+        renderBoard();
+        refreshHud();
+        renderCard(state.groups[state.currentIdx].position, { openModal: false });
+        setDiceDisplay("—", false);
+        setStatus("請擲骰或輸入點數。完成動作後再換下一組。");
+      }
+
+      function moveGroup(g, steps) {
+        var pos = g.position;
+        var crossed = 0;
+        var i;
+        for (i = 0; i < steps; i++) {
+          pos += 1;
+          if (pos > 24) {
+            pos = 1;
+            crossed += 1;
+          }
+        }
+        g.position = pos;
+        if (crossed > 0) {
+          g.laps += crossed;
+        }
+      }
+
+      function currentGroup() {
+        return state.groups[state.currentIdx];
+      }
+
+      function refreshHud() {
+        var g = currentGroup();
+        el("groupName").textContent = g.name;
+        el("groupSwatch").style.background = g.color;
+        el("levelDisplay").textContent = levelLabel(g);
+        el("lapDisplay").textContent = String(g.laps);
+        el("scoreDisplay").textContent = String(g.score);
+        el("posLine").textContent = "位置：第 " + g.position + " 格";
+      }
+
+      function setStatus(t) {
+        el("statusMsg").textContent = t;
+      }
+
+      function setDiceDisplay(value, animate) {
+        var node = el("diceFace");
+        node.textContent = value === null || value === undefined ? "—" : String(value);
+        node.classList.remove("dice-animate");
+        void node.offsetWidth;
+        if (animate) node.classList.add("dice-animate");
+      }
+
+      function openActionModal() {
+        var modal = el("actionModal");
+        var panel = el("actionModalPanel");
+        modal.classList.remove("hidden");
+        document.body.style.overflow = "hidden";
+        panel.classList.remove("modal-panel-animate");
+        void panel.offsetWidth;
+        panel.classList.add("modal-panel-animate");
+        window.setTimeout(function () {
+          el("actionModalClose").focus();
+        }, 40);
+      }
+
+      function closeActionModal() {
+        el("actionModal").classList.add("hidden");
+        document.body.style.overflow = "";
+      }
+
+      function renderCard(cell, opts) {
+        opts = opts || {};
+        var g = currentGroup();
+        var info = resolveCell(cell);
+        var title = "第 " + cell + " 格｜" + info.title;
+        var html = buildCardBodyHtml(cell, g);
+        el("cardTitle").textContent = title;
+        el("modalCardTitle").textContent = title;
+        el("cardBody").innerHTML = html;
+        el("modalCardBody").innerHTML = html;
+        if (opts.openModal) openActionModal();
+      }
+
+      function groupsOnCell(cell) {
+        return state.groups
+          .map(function (g, i) {
+            return { g: g, i: i };
+          })
+          .filter(function (x) {
+            return x.g.position === cell;
+          });
+      }
+
+      function renderBoard() {
+        var board = el("board");
+        board.innerHTML = "";
+        var gcur = currentGroup();
+        var r, c;
+        for (r = 0; r < 6; r++) {
+          for (c = 0; c < 8; c++) {
+            if (!BOARD_LAYOUT[r][c]) {
+              var spacer = document.createElement("div");
+              spacer.style.gridColumn = c + 1;
+              spacer.style.gridRow = r + 1;
+              spacer.className = "min-h-[2.5rem]";
+              board.appendChild(spacer);
+              continue;
+            }
+            var cellNum = null;
+            var k;
+            for (k in CELL_NUMBER_AT) {
+              if (CELL_NUMBER_AT[k].c === c && CELL_NUMBER_AT[k].r === r) {
+                cellNum = parseInt(k, 10);
+                break;
+              }
+            }
+            var ce = CELLS[cellNum];
+            var btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "cell pb-9 sm:pb-10 " + cellUiClass(ce);
+            if (cellNum === gcur.position) btn.classList.add("cell-active");
+            btn.style.gridColumn = c + 1;
+            btn.style.gridRow = r + 1;
+            btn.dataset.cell = String(cellNum);
+            var star = ce.kind === "core" ? '<span class="absolute top-0.5 right-0.5 text-lg font-black text-amber-800">★</span>' : "";
+            btn.innerHTML =
+              star +
+              '<span class="text-xl sm:text-2xl lg:text-3xl leading-none">' +
+              cellNum +
+              "</span>" +
+              '<span class="text-xs sm:text-sm lg:text-base text-center font-black leading-tight mt-0.5 px-0.5">' +
+              shortName(cellNum) +
+              "</span>" +
+              '<span class="token-row" data-tok="' +
+              cellNum +
+              '"></span>';
+            btn.addEventListener("click", function () {
+              var cn = parseInt(btn.dataset.cell, 10);
+              renderCard(cn, { openModal: true });
+            });
+            board.appendChild(btn);
+          }
+        }
+        var n;
+        for (n = 1; n <= 24; n++) {
+          var holder = document.querySelector('[data-tok="' + n + '"]');
+          if (!holder) continue;
+          holder.innerHTML = groupsOnCell(n)
+            .map(function (x) {
+              return pawnSvg(x.g.color, x.g.name);
+            })
+            .join("");
+        }
+      }
+
+      function applyLandingEffects() {
+        var g = currentGroup();
+        var cell = g.position;
+        var c = CELLS[cell];
+        if (state.mustReroll) {
+          state.mustReroll = false;
+        }
+        if (c.score) {
+          g.score += c.score;
+        }
+        if (cell === 4) {
+          state.mustReroll = true;
+          setStatus("機會卡：請再擲一次骰子（同一組回合內），移動後再按「完成動作」。");
+        } else {
+          setStatus("請帶領完成格子內容，然後按「完成動作」。");
+        }
+        state.canRoll = state.mustReroll;
+        refreshHud();
+        renderCard(cell, { openModal: true });
+      }
+
+      function runDice(value) {
+        if (state.phase === "busy") return;
+        if (!state.canRoll) {
+          setStatus("此組已擲骰完成。請先按「完成動作」，再按「下一組」換下一隊。");
+          return;
+        }
+        if (value < 1 || value > 6 || value !== value) {
+          setStatus("請輸入 1 到 6 的整數。");
+          return;
+        }
+        state.phase = "busy";
+        state.lastDice = value;
+        setDiceDisplay(value, true);
+        el("diceHint").textContent = "點數：" + value + " — 前進 " + value + " 格";
+
+        window.setTimeout(function () {
+          var g = currentGroup();
+          moveGroup(g, value);
+          refreshHud();
+          renderBoard();
+          applyLandingEffects();
+          state.phase = "idle";
+        }, 1200);
+      }
+
+      el("btnRoll").addEventListener("click", function () {
+        if (state.phase === "busy") return;
+        var v = 1 + Math.floor(Math.random() * 6);
+        runDice(v);
+      });
+
+      el("btnApplyDice").addEventListener("click", function () {
+        var raw = el("diceInput").value.trim();
+        var v = parseInt(raw, 10);
+        runDice(v);
+      });
+
+      el("btnDone").addEventListener("click", function () {
+        if (state.mustReroll) {
+          setStatus("機會卡尚未完成：請先再擲一次（電腦或輸入），移動後再按「完成動作」。");
+          return;
+        }
+        closeActionModal();
+        setStatus("做得很好！若此組回合結束，請按「下一組」。");
+      });
+
+      el("btnNext").addEventListener("click", function () {
+        if (state.mustReroll) {
+          setStatus("此組仍有「再擲一次」未完成，請先擲骰並完成移動。");
+          return;
+        }
+        state.currentIdx = (state.currentIdx + 1) % state.groups.length;
+        state.canRoll = true;
+        refreshHud();
+        renderBoard();
+        renderCard(currentGroup().position, { openModal: false });
+        setStatus("換「" + currentGroup().name + "」。請擲骰或輸入點數。");
+      });
+
+      el("groupCount").addEventListener("change", buildGroups);
+
+      el("actionModalClose").addEventListener("click", closeActionModal);
+      el("actionModalBackdrop").addEventListener("click", closeActionModal);
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && !el("actionModal").classList.contains("hidden")) closeActionModal();
+      });
+
+      buildGroups();
+    })();
+  </script>
+</body>
+</html>
